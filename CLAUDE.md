@@ -12,19 +12,21 @@ should not.
 ## Stack
 
 - Node 22 LTS, TypeScript 6
-- Fastify 5
+- Fastify 5 + `@fastify/type-provider-typebox` (end-to-end type inference from schemas)
 - `@sinclair/typebox` for schemas, AJV for validation
 - `@supabase/supabase-js`
 - `@fastify/swagger` + `@fastify/swagger-ui`
-- pnpm, node-tap
+- pnpm, vitest
 
 ## Commands
 
 ```bash
-pnpm dev        # tsx watch
-pnpm build      # tsc -p tsconfig.json
-pnpm start      # node --env-file=.env dist/index.js
-pnpm test       # tap --allow-incomplete-coverage
+pnpm dev          # tsx watch
+pnpm build        # tsc -p tsconfig.build.json
+pnpm start        # node --env-file=.env dist/index.js
+pnpm test         # vitest (watch mode)
+pnpm test:run     # vitest run (single run, use in CI)
+pnpm typecheck    # tsc --noEmit (checks src + tests)
 ```
 
 ## Layout
@@ -33,16 +35,13 @@ pnpm test       # tap --allow-incomplete-coverage
 src/
 ├── api/
 │   ├── health/health.routes.ts
-│   ├── <resource>/                # 7 files per resource
+│   ├── <resource>/                # 6 files per resource
 │   │   ├── <resource>.routes.ts
 │   │   ├── <resource>.schemas.ts
 │   │   ├── <resource>.docs.ts
 │   │   ├── <resource>.types.ts
 │   │   ├── <resource>.service.ts
-│   │   ├── <resource>.repository.ts
-│   │   └── tests/
-│   │       ├── <resource>.service.test.ts
-│   │       └── <resource>.routes.test.ts
+│   │   └── <resource>.repository.ts
 │   └── index.ts                   # rootRoutes
 ├── common/
 │   ├── base/
@@ -58,8 +57,17 @@ src/
 │   └── requireRole.ts
 ├── services/                      # one HTTP client per upstream (optional)
 ├── utils/errors.ts
+├── app.ts                         # buildApp() factory (used by server + tests)
 ├── routes.ts
-└── index.ts
+└── index.ts                       # process boot only
+tests/
+├── helpers/build-test-app.ts
+├── routes/
+│   ├── root.test.ts
+│   ├── health.test.ts
+│   └── <resource>.test.ts
+└── services/
+    └── <resource>.service.test.ts
 supabase/
 └── migrations/
 ```
@@ -68,16 +76,16 @@ supabase/
 
 ### 1. Plugin order is load-bearing
 
-In `src/index.ts`:
+In `src/app.ts`:
 
 1. `errorHandler` **first**.
 2. `swagger`.
-3. `supabase` → `authenticate` → `requireRole` (and any upstream-client
-   plugin you add).
-4. `registerRoutes(server)`.
+3. `supabase` → `identity` → `authenticate` → `requireRole` (and any
+   additional upstream-client plugin you add).
+4. `registerRoutes(app)`.
 5. `swaggerUI` **last**.
 
-Don't reorder. `authenticate` depends on `supabase`; `requireRole`
+Don't reorder. `authenticate` depends on `identity`; `requireRole`
 depends on `authenticate`. The plugin definitions enforce that with
 `fastify-plugin`'s `dependencies`.
 
@@ -223,7 +231,24 @@ users. So error messages here can (and should) be specific.
   manually, populate `details` with `{ field, issue }` so the caller
   knows which field broke.
 
-### 14. OpenAPI docs are for service consumers (BFFs and other services)
+### 14. Authentication is delegated to identity-service
+
+The `authenticate` plugin calls `fastify.identity.getMe(token)` (a `GET
+/v1/auth/me` HTTP call) rather than verifying JWTs locally. On success it
+decorates:
+
+- `request.user` — `{ id, email }` extracted from the response.
+- `request.identity` — the full identity-service payload, including
+  `identity.orgs[].products[].brandAccess[]`. Use this in `requireRole` to
+  check org/brand membership without a second network hop.
+- `request.accessToken` — the raw Bearer token, forwarded on upstream calls.
+
+The `identity` plugin (`src/plugins/identity.ts`) decorates `fastify.identity`
+with an `IdentityClient` instance. It validates `IDENTITY_SERVICE_URL` at boot
+— the server will not start without it. Configure the URL in `.env` and
+`.env.example`.
+
+### 15. OpenAPI docs are for service consumers (BFFs and other services)
 
 Unlike a BFF, the audience for this service's `/docs` is internal —
 other backend engineers integrating BFF or service-to-service calls.
@@ -245,22 +270,28 @@ That implies more prose than a BFF's own docs would carry.
 
 ## Adding a new resource (recipe)
 
-1. Create the seven files under `src/api/<resource>/`.
+1. Create the six files under `src/api/<resource>/`. Give every TypeBox schema a
+   resource-prefixed `$id` (e.g. `$id: 'BrandCreateRequest'`) and call
+   `fastify.addSchema(...)` for each at the top of the route plugin.
 2. Add a migration under `supabase/migrations/` for the new table.
 3. Register the routes at their prefix in `src/routes.ts`.
 4. Add the resource's tag to `src/plugins/swagger.ts`.
-5. Add a coverage map entry in `coverage-map.cjs`.
-6. Write tests under `src/api/<resource>/tests/`.
+5. Write tests: `tests/services/<resource>.service.test.ts` (unit, mocked repo)
+   and `tests/routes/<resource>.test.ts` (integration, chained Supabase mock via
+   `buildTestApp`). See `tests/helpers/build-test-app.ts`.
 
 ## Adding a cross-service upstream (recipe)
 
+The identity integration (`src/services/identity.ts` +
+`src/plugins/identity.ts`) is the worked example. Follow the same pattern
+for any additional upstream:
+
 1. Add `<UPSTREAM>_URL` and `<UPSTREAM>_TIMEOUT` to `appConfig.ts`,
    making the URL `required()` if production needs it.
-2. Add the env var to `.env.example`.
-3. Create `src/services/<upstream>.ts` — one client per upstream.
-4. Create `src/plugins/<upstream>.ts` that decorates
-   `fastify.<upstream>` with the client, with
-   `dependencies: ['supabase']` if it needs Supabase context, else
-   none.
-5. Register the plugin in `src/index.ts` between `requireRole` and
-   `registerRoutes`.
+2. Add the vars to `.env.example`.
+3. Create `src/services/<upstream>.ts` — one HTTP client class per upstream.
+4. Create `src/plugins/<upstream>.ts` that decorates `fastify.<upstream>`
+   with the client. Set `dependencies: []` (or omit) if independent of other
+   plugins.
+5. Register the plugin in `src/app.ts` in the correct position (after any
+   plugin it depends on, before any plugin that depends on it).

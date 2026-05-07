@@ -1,16 +1,25 @@
-import { FastifyInstance } from 'fastify'
+import { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox'
 import { itemsDocs } from './items.docs'
 import {
-  ListItemsQuery,
-  ItemParams,
-  CreateItemBody,
-  UpdateItemBody
+  ItemSchema,
+  ItemParamsSchema,
+  ListItemsQuerySchema,
+  ListItemsResponseSchema,
+  CreateItemBodySchema,
+  UpdateItemBodySchema
 } from './items.schemas'
 import { ItemsRepository } from './items.repository'
 import { ItemsService } from './items.service'
 import { config } from '../../config/appConfig'
 
-export const itemsRoutes = async (fastify: FastifyInstance) => {
+export const itemsRoutes: FastifyPluginAsyncTypebox = async (fastify) => {
+  fastify.addSchema(ItemSchema)
+  fastify.addSchema(ItemParamsSchema)
+  fastify.addSchema(ListItemsQuerySchema)
+  fastify.addSchema(ListItemsResponseSchema)
+  fastify.addSchema(CreateItemBodySchema)
+  fastify.addSchema(UpdateItemBodySchema)
+
   // Construct the repo+service per-route using the admin client so writes
   // bypass RLS. For reads where RLS should apply, build a per-request
   // service using fastify.supabaseAsUser(request.accessToken!) inside the
@@ -18,7 +27,7 @@ export const itemsRoutes = async (fastify: FastifyInstance) => {
   const repo = new ItemsRepository(fastify.supabaseAdmin, config.DB_SCHEMA)
   const service = new ItemsService(repo)
 
-  fastify.get<{ Querystring: ListItemsQuery }>('/', {
+  fastify.get('/', {
     schema: itemsDocs.listItems,
     preHandler: [fastify.authenticate],
     handler: async (request, reply) => {
@@ -29,17 +38,20 @@ export const itemsRoutes = async (fastify: FastifyInstance) => {
     }
   })
 
-  fastify.post<{ Body: CreateItemBody }>('/', {
+  fastify.post('/', {
     schema: itemsDocs.createItem,
     preHandler: [fastify.authenticate],
     handler: async (request, reply) => {
       const actor = request.user?.id ?? 'api'
-      const item = await service.create(request.body, actor)
+      const item = await service.create(
+        { name: request.body.name, description: request.body.description ?? null },
+        actor
+      )
       return reply.status(201).send(item)
     }
   })
 
-  fastify.get<{ Params: ItemParams }>('/:id', {
+  fastify.get('/:id', {
     schema: itemsDocs.getItem,
     preHandler: [fastify.authenticate],
     handler: async (request, reply) => {
@@ -48,7 +60,7 @@ export const itemsRoutes = async (fastify: FastifyInstance) => {
     }
   })
 
-  fastify.patch<{ Params: ItemParams; Body: UpdateItemBody }>('/:id', {
+  fastify.patch('/:id', {
     schema: itemsDocs.updateItem,
     preHandler: [fastify.authenticate],
     handler: async (request, reply) => {

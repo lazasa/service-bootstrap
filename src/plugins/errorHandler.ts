@@ -5,7 +5,7 @@ import {
   FastifyRequest
 } from 'fastify'
 import fp from 'fastify-plugin'
-import { AppError, ErrorDetail } from '../utils/errors'
+import { AppError, ErrorDetail, ErrorResponseSchema } from '../utils/errors'
 
 const SYSTEM_ERRORS: Record<
   string,
@@ -62,6 +62,8 @@ const FASTIFY_ERRORS: Record<string, { code: string; message: string }> = {
 }
 
 const errorHandlerPlugin: FastifyPluginAsync = async (fastify) => {
+  fastify.addSchema(ErrorResponseSchema)
+
   fastify.setNotFoundHandler((request, reply) => {
     const errorResponse = {
       error: {

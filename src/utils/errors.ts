@@ -1,3 +1,28 @@
+import { Type, Static } from '@sinclair/typebox'
+
+export const ErrorResponseSchema = Type.Object(
+  {
+    error: Type.Object(
+      {
+        code: Type.String(),
+        message: Type.String(),
+        status: Type.Integer(),
+        details: Type.Optional(
+          Type.Array(
+            Type.Object(
+              { field: Type.String(), issue: Type.String() },
+              { additionalProperties: false }
+            )
+          )
+        )
+      },
+      { additionalProperties: false }
+    )
+  },
+  { $id: 'ErrorResponse', additionalProperties: false }
+)
+export type ErrorResponseType = Static<typeof ErrorResponseSchema>
+
 export interface ErrorDetail {
   field: string
   issue: string

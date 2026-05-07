@@ -25,21 +25,6 @@ export const swaggerOptions = {
           bearerFormat: 'JWT',
           description: 'Supabase access token. Pass as: Authorization: Bearer <token>'
         }
-      },
-      schemas: {
-        Error: {
-          type: 'object' as const,
-          properties: {
-            error: {
-              type: 'object' as const,
-              properties: {
-                code: { type: 'string' as const },
-                message: { type: 'string' as const },
-                status: { type: 'number' as const }
-              }
-            }
-          }
-        }
       }
     }
   }

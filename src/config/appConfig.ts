@@ -25,9 +25,6 @@ export const config = {
   // TODO: replace with your service's Postgres schema (e.g. orkha_brand_service).
   DB_SCHEMA: process.env.DB_SCHEMA || 'orkha_service_bootstrap',
 
-  // Optional cross-service upstream — uncomment and require if your
-  // service calls another service.
-  // IDENTITY_SERVICE_URL: required('IDENTITY_SERVICE_URL'),
-  IDENTITY_SERVICE_URL: process.env.IDENTITY_SERVICE_URL || '',
-  IDENTITY_SERVICE_TIMEOUT: 30000
+  IDENTITY_SERVICE_URL: required('IDENTITY_SERVICE_URL', 'http://localhost:3001'),
+  IDENTITY_SERVICE_TIMEOUT: Number(process.env.IDENTITY_SERVICE_TIMEOUT) || 30000
 }

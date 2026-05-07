@@ -1,10 +1,12 @@
+import { ErrorResponseSchema } from '../../utils/errors'
+
 export const commonErrorResponses = {
-  400: { description: 'Bad Request', type: 'object' },
-  401: { description: 'Unauthorized', type: 'object' },
-  403: { description: 'Forbidden', type: 'object' },
-  404: { description: 'Not Found', type: 'object' },
-  409: { description: 'Conflict', type: 'object' },
-  500: { description: 'Internal Server Error', type: 'object' },
-  503: { description: 'Service Unavailable', type: 'object' },
-  504: { description: 'Gateway Timeout', type: 'object' }
+  400: ErrorResponseSchema,
+  401: ErrorResponseSchema,
+  403: ErrorResponseSchema,
+  404: ErrorResponseSchema,
+  409: ErrorResponseSchema,
+  500: ErrorResponseSchema,
+  503: ErrorResponseSchema,
+  504: ErrorResponseSchema
 }

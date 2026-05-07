@@ -1,7 +1,3 @@
-// Role-gating preHandler factory. The shipped implementation is a stub
-// that lets every authenticated user through — replace the body with
-// your service's role check (typically a call to identity-service or a
-// claim lookup on request.user).
 import fp from 'fastify-plugin'
 import { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify'
 import { ForbiddenError, UnauthorizedError } from '../utils/errors'
@@ -20,10 +16,17 @@ const requireRolePlugin: FastifyPluginAsync = async (fastify) => {
       if (!request.user) {
         throw new UnauthorizedError()
       }
-      // TODO: implement your service's role check here.
-      // Example: call identity-service /v1/auth/me, inspect the
-      // returned org/brand role tree, throw ForbiddenError if the
-      // user does not meet `_role`.
+      // `request.identity` (populated by the authenticate plugin) holds the
+      // full identity-service /auth/me payload — `identity.user` plus
+      // `identity.orgs[].products[].brandAccess[]` describing the user's
+      // organisation, product, and per-resource role tree.
+      //
+      // Implement your service's role check against that shape:
+      //   - Build a ROLE_RANK map for ordinal comparisons.
+      //   - Short-circuit for `identity.user.isSuperAdmin` or `org_admin` orgs.
+      //   - Look up the resource id from `request.params` and find the
+      //     matching brandAccess entry.
+      //   - Throw `ForbiddenError` with a specific message on failure.
       void ForbiddenError
     }
   })
@@ -31,5 +34,5 @@ const requireRolePlugin: FastifyPluginAsync = async (fastify) => {
 
 export default fp(requireRolePlugin, {
   name: 'requireRole',
-  dependencies: ['authenticate']
+  dependencies: ['authenticate'],
 })

@@ -4,10 +4,12 @@
   "description": "Bootstrap template for Orkha domain services. Fastify + TypeScript + Supabase. Owns its domain database.",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "start": "node --env-file=.env dist/index.js",
     "dev": "tsx watch --env-file=.env src/index.ts",
-    "test": "tap --allow-incomplete-coverage"
+    "test": "vitest",
+    "test:run": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "engines": {
     "node": ">=22"
@@ -19,6 +21,7 @@
   "dependencies": {
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^5.2.5",
+    "@fastify/type-provider-typebox": "^5.1.0",
     "@sinclair/typebox": "^0.34.49",
     "@supabase/supabase-js": "^2.103.0",
     "dotenv": "^17.4.2",
@@ -29,9 +32,8 @@
   "devDependencies": {
     "@types/humps": "^2.0.6",
     "@types/node": "^22.10.0",
-    "@types/tap": "^15.0.11",
-    "tap": "^21.6.3",
     "tsx": "^4.21.0",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.2",
+    "vitest": "^2.1.8"
   }
 }

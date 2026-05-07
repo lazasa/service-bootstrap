@@ -1,4 +1,0 @@
-include:
-  - src/**/*.test.ts
-
-coverage-map: coverage-map.cjs
