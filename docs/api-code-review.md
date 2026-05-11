@@ -42,9 +42,12 @@
 
 ### Database
 
-- **`updated_at` is set in the repository.** Concurrent writes from multiple instances can disagree. Better as a Postgres `BEFORE UPDATE` trigger so it's always accurate and so direct SQL writes also update the column. ADR-worthy.
 - **No translation of Supabase error codes.** A unique-violation (`23505`) currently propagates as a generic `500`. Map known Postgres codes to domain errors in the repository (e.g. `409 CONFLICT`).
-- **No generated Supabase types.** Rows are cast via `as Item`. Run `supabase gen types typescript` and consume generated types so column drift surfaces at compile time.
+- **No generated Supabase types.** Rows are cast via `as <Row>`. Run `supabase gen types typescript` and consume generated types so column drift surfaces at compile time.
+
+**Resolved**
+
+- ~~**`updated_at` is set in the repository.**~~ The bootstrap now mirrors the identity-service convention: a per-schema `set_updated_at()` function attached as a `BEFORE UPDATE` trigger (`set_<table>_updated_at`) on every table. Application code never writes `updated_at`. See [ADR-0002](decisions/0002-updated-at-trigger.md).
 
 ### Test coverage
 
@@ -64,5 +67,4 @@
 4. snake_case standalone repo vs BaseRepository + humps (two naming patterns)
 5. Migration discipline (fix-forward, no `REVOKE` in initial migration)
 6. Internal-facing OpenAPI prose policy
-7. Postgres `updated_at` trigger vs. application-set timestamp
-8. Supabase error code → API error code mapping table
+7. Supabase error code → API error code mapping table

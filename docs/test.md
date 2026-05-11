@@ -31,12 +31,12 @@ function makeRepo(overrides = {}) {
     create: vi.fn(),
     update: vi.fn(),
     ...overrides,
-  } as unknown as ItemsRepository
+  } as unknown as <Resource>Repository
 }
 
 it('throws NOT_FOUND when missing', async () => {
   const repo = makeRepo({ findById: vi.fn().mockResolvedValue(null) })
-  const service = new ItemsService(repo)
+  const service = new <Resource>Service(repo)
   await expect(service.getById('missing')).rejects.toMatchObject({ code: 'NOT_FOUND' })
 })
 ```
@@ -75,7 +75,7 @@ const admin = asAdmin({
 })
 
 const app = await buildTestApp({ supabaseAdmin: admin })
-const res = await app.inject({ method: 'GET', url: '/v1/items', headers: { authorization: 'Bearer test-token' } })
+const res = await app.inject({ method: 'GET', url: '/v1/<resource>', headers: { authorization: 'Bearer test-token' } })
 expect(res.statusCode).toBe(200)
 ```
 
@@ -117,7 +117,7 @@ const app = await buildTestApp({
 
 ## What to test for a new resource
 
-Copy `tests/routes/items.test.ts` and `tests/services/items.service.test.ts` as templates. At minimum cover:
+Create `tests/routes/<resource>.test.ts` (integration layer) and `tests/services/<resource>.service.test.ts` (unit layer). At minimum cover:
 
 - Happy path on each verb (list, get, create, patch)
 - Validation failure — assert the `VALIDATION_ERROR` envelope and `400`

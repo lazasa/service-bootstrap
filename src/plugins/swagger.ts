@@ -15,7 +15,7 @@ export const swaggerOptions = {
           process.env.NODE_ENV === 'production' ? 'Production' : 'Development'
       }
     ],
-    tags: [{ name: 'Items', description: 'Example items resource' }],
+    tags: [], // add { name: '<Resource>', description: '...' } for each resource registered in routes.ts
     security: [{ BearerAuth: [] }],
     components: {
       securitySchemes: {

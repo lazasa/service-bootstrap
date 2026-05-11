@@ -1,8 +1,8 @@
 # orkha-service-bootstrap
 
 Bootstrap template for Orkha domain services (services that own a
-Supabase-backed domain database). Clone, rename, replace the example
-`items` resource with your own.
+Supabase-backed domain database). Clone, rename, then add your resources
+following the convention described in `CLAUDE.md`.
 
 ## Stack
 
@@ -30,13 +30,10 @@ pnpm test             # tap (with coverage map)
    `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
 3. `src/config/appConfig.ts`: replace `DB_SCHEMA` default
    (`orkha_service_bootstrap`) with your real schema name.
-4. `supabase/migrations/20260101000000_initial.sql`: rename the schema,
-   replace the example `items` table with your real tables, tighten the
-   RLS policies.
-5. `src/api/items/` is the example 7-file resource. Delete it and
-   `src/api/items/tests/`, then add your real resources following the
-   same pattern. Update `src/routes.ts` and `coverage-map.cjs`.
-6. `src/plugins/swagger.ts`: replace title, description, tags.
+4. Add your first resource following the "Adding a new resource" recipe in `CLAUDE.md`.
+   Your first migration must also create the schema, role grants, default privileges,
+   and the per-schema `set_updated_at()` function (see Rule 10 + 11 in `CLAUDE.md`).
+5. `src/plugins/swagger.ts`: replace title, description, and add your resource tags.
 7. `src/plugins/requireRole.ts`: implement your real role check (the
    shipped version is a stub that lets every authenticated user
    through).

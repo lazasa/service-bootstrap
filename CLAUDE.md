@@ -4,10 +4,7 @@ This file tells Claude Code (and humans) how to work in this repository.
 
 ## What this is
 
-A **domain service** built on Fastify + TypeScript + Supabase. It owns
-its domain database and exposes HTTP endpoints to BFFs and other
-services. **It is NOT a BFF** — it does talk to the database; BFFs
-should not.
+A **domain service** (Fastify + TypeScript + Supabase). Owns its domain database and exposes HTTP endpoints to BFFs and other services. **Not a BFF** — it talks to the DB; BFFs must not.
 
 ## Stack
 
@@ -31,46 +28,7 @@ pnpm typecheck    # tsc --noEmit (checks src + tests)
 
 ## Layout
 
-```
-src/
-├── api/
-│   ├── health/health.routes.ts
-│   ├── <resource>/                # 6 files per resource
-│   │   ├── <resource>.routes.ts
-│   │   ├── <resource>.schemas.ts
-│   │   ├── <resource>.docs.ts
-│   │   ├── <resource>.types.ts
-│   │   ├── <resource>.service.ts
-│   │   └── <resource>.repository.ts
-│   └── index.ts                   # rootRoutes
-├── common/
-│   ├── base/
-│   │   ├── BaseRepository.ts      # generic Supabase CRUD (humps)
-│   │   └── BaseService.ts
-│   └── docs/commonResponses.ts
-├── config/appConfig.ts            # env load with required()
-├── plugins/
-│   ├── errorHandler.ts
-│   ├── swagger.ts
-│   ├── supabase.ts                # three clients
-│   ├── authenticate.ts
-│   └── requireRole.ts
-├── services/                      # one HTTP client per upstream (optional)
-├── utils/errors.ts
-├── app.ts                         # buildApp() factory (used by server + tests)
-├── routes.ts
-└── index.ts                       # process boot only
-tests/
-├── helpers/build-test-app.ts
-├── routes/
-│   ├── root.test.ts
-│   ├── health.test.ts
-│   └── <resource>.test.ts
-└── services/
-    └── <resource>.service.test.ts
-supabase/
-└── migrations/
-```
+See [docs/architecture.md](docs/architecture.md) for the directory layout.
 
 ## Core rules
 
@@ -103,23 +61,21 @@ depends on `authenticate`. The plugin definitions enforce that with
 - AJV is configured with `removeAdditional: false`. Unknown fields → 400.
 - Every body / query / params schema sets `additionalProperties: false`.
 - Pull `Static<>` types from the schemas — don't hand-write them.
+- Every parameter property (path / query / header) carries `example`, `default`, or `enum` so the generated spec exposes a concrete sample value.
+- Every request-body schema carries a top-level `example` on the outer `Type.Object` options matching its required fields.
+- Prefer `Type.String({ enum: [...] })` (or `Type.Enum(...)`) over `Type.Union([Type.Literal(...), ...])`. The former serialises as `enum`; the latter as `anyOf`, which most spec consumers can't expand.
 
-### 4. Resource pattern (7 files)
+### 4. Resource pattern
 
-Every resource lives in `src/api/<resource>/` with:
+Every resource lives in `src/api/<resource>/`:
 
-- `<resource>.routes.ts` — plain `async (fastify) => {}`. Spread the
-  docs entry into `schema:`. Use `preHandler: [fastify.authenticate]`
-  on protected routes; layer `fastify.requireRole(...)` for role gates.
+- `<resource>.routes.ts` — `async (fastify) => {}`. Spread docs into `schema:`. Use `preHandler: [fastify.authenticate]`; layer `fastify.requireRole(...)` for role gates.
 - `<resource>.schemas.ts` — TypeBox schemas + `Static<>` types.
-- `<resource>.docs.ts` — one entry per operation; spread
-  `commonErrorResponses` into `response`.
+- `<resource>.docs.ts` — one entry per operation; spread `commonErrorResponses` into `response`.
 - `<resource>.types.ts` — TS interfaces matching the DB shape.
-- `<resource>.service.ts` — business logic. Depends on the repository,
-  never on Supabase directly.
-- `<resource>.repository.ts` — Supabase queries. Owns the table.
-- `tests/<resource>.service.test.ts` and
-  `tests/<resource>.routes.test.ts`.
+- `<resource>.service.ts` — business logic; depends on the repository, never Supabase directly.
+- `<resource>.repository.ts` — Supabase queries, owns the table.
+- Tests: `tests/services/<resource>.service.test.ts` and `tests/routes/<resource>.test.ts`.
 
 ### 5. Three Supabase clients, injected via plugin
 
@@ -146,19 +102,15 @@ rule.
 
 Each resource folder owns one repository. Cross-table queries live on
 the **initiating** resource's repository — never on a sibling repo.
-If `items.service.ts` needs to read from `orders`, the orders read goes
-on `items.repository.ts`, not on `orders.repository.ts`.
+If `<resource-a>.service.ts` needs to read from `<resource-b>`, that
+read goes on `<resource-a>.repository.ts`, not on `<resource-b>.repository.ts`.
 
-### 8. Standalone vs `BaseRepository`
+### 8. Client-facing APIs prefer camelCase
 
-`BaseRepository` (in `src/common/base/`) wraps Supabase CRUD with
-`humps` for camelCase conversion. Extend it **only** when the table has
-no JSONB columns — humps will recursively transform JSONB keys and
-corrupt them.
+API responses/request bodies use camelCase; DB columns stay snake_case (Rule 11). Translation happens in the repository layer. Two helpers in `src/common/base/`:
 
-The shipped `items.repository.ts` is a **standalone** class (not
-extending `BaseRepository`) and uses snake_case directly. That's the
-default; reach for `BaseRepository` only when it clearly fits.
+- `BaseRepository` — generic Supabase CRUD with `humps`. **Unsafe for JSONB columns** (humps recurses in and corrupts keys).
+- `KeyTransformer` — camelizes/decamelizes while treating declared keys as opaque (JSONB-safe). Use instead of `BaseRepository` when any column is JSONB.
 
 ### 9. Cross-service calls are HTTP only
 
@@ -171,21 +123,18 @@ No DB-to-DB coupling, no shared Postgres schemas, no event bus.
 
 ### 10. Migration discipline
 
-- Initial migration sets grants correctly. **No `REVOKE` in initial
-  migrations.** If grants need adjusting before prod, edit this file
-  and reapply from a clean DB.
-- Once a migration is applied to prod, fix-forward with patch
-  migrations — don't edit the historical file.
-- Keep migrations clean: prefer editing the most recent unmerged
-  migration over stacking fix files.
+- The **first migration** must create the schema, set role grants, and define `set_updated_at()`. No `REVOKE` — if grants need changing before prod, edit and reapply against a clean DB. See [`supabase/migrations/TEMPLATE.sql`](supabase/migrations/TEMPLATE.sql) for the skeleton.
+- Once applied to prod, fix-forward with patch migrations — never edit the historical file.
+- Prefer editing the most recent unmerged migration over stacking fix files.
 
 ### 11. Schema convention
 
-- DB columns are **snake_case**.
-- TypeScript types and API schemas use snake_case to match
-  (`created_at`, not `createdAt`) — it removes a translation layer.
-- JSONB content **inside** columns is stored and returned as-is. Do not
-  run JSONB through `humps`.
+- DB columns are **snake_case**. JSONB content inside columns is stored and returned as-is — do not run through `humps`.
+- Every domain table has exactly three metadata columns: `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`, `created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`, `updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`.
+- `updated_at` is DB-owned via a `BEFORE UPDATE` trigger `set_<table>_updated_at` → `<schema>.set_updated_at()`. **Never write `updated_at` from application code.**
+- First-migration SQL skeleton (schema, grants, function, trigger): [`supabase/migrations/TEMPLATE.sql`](supabase/migrations/TEMPLATE.sql).
+- No `created_by` / `updated_by` / `deleted_at` by default. Add explicitly if auditing is needed.
+- Pure join tables use a composite `PRIMARY KEY` on FK columns (no surrogate `id`); still carry `created_at` and `updated_at`.
 
 ### 12. Health endpoint
 
@@ -194,42 +143,14 @@ No DB-to-DB coupling, no shared Postgres schemas, no event bus.
 
 ### 13. Errors must be descriptive and logged
 
-Domain services are **not consumer-facing** — only other services and
-BFFs call them, and the BFFs sanitise messages before forwarding to end
-users. So error messages here can (and should) be specific.
+Not consumer-facing — BFFs sanitise before forwarding — so error messages can and should be specific.
 
-- **Throw with full context.** `throw new NotFoundError()` is too thin.
-  Prefer `throw new NotFoundError(\`Item \${id} not found\`)` or
-  `throw new ConflictError(\`Cannot publish brand \${id} — already
-  published (version \${version})\`)`. Include identifiers, the
-  operation, and the constraint that was violated. Schema names, table
-  names, and DB constraint names are fine in service-to-service errors
-  — they help the BFF log triage the cause. Generic messages like
-  `"Bad Request"` or `"Error"` are not acceptable.
-- **Log before re-throwing only when you add information.** The global
-  `errorHandler` already logs every error with request context, so don't
-  double-log the same `err` for noise. Do log when you can attach
-  something the handler can't see (the Postgres error code, the SQL
-  constraint name, the row count, the retry attempt, the upstream URL):
-  `request.log.warn({ pgCode: err.code, constraint:
-  'items_slug_key' }, 'unique constraint violation on items.slug')`.
-- **Use `request.log`, not `console`.** It carries the request id and
-  pino redacts `Authorization` headers.
-- **Repositories surface, services translate.** Repositories let raw
-  Supabase errors propagate (with the original `code` like `PGRST116`,
-  `23505`, etc.). The service layer catches them and re-throws as the
-  domain error with a readable message — that's where the
-  `"Item \${id} not found"` lives, not in the route.
-- **Pick the right error class.** `BadRequestError`, `NotFoundError`,
-  `ConflictError`, `UnauthorizedError`, `ForbiddenError`,
-  `ServiceUnavailableError`, `GatewayTimeoutError`,
-  `TokenExpiredError`, `TokenInvalidError`, `TokenRevokedError`,
-  `UpstreamUnavailableError`. Don't reach for `AppError` directly unless
-  none of the subclasses fit.
-- **Validation errors carry `details[]`.** `errorHandler` already builds
-  the `details` array from AJV output; if you throw `ValidationError`
-  manually, populate `details` with `{ field, issue }` so the caller
-  knows which field broke.
+- **Throw with full context.** `throw new NotFoundError(\`<Resource> \${id} not found\`)`. Include identifiers, the operation, and the violated constraint. Schema/table/constraint names are fine. Generic messages like `"Bad Request"` are not acceptable.
+- **Log before re-throwing only when you add information** the `errorHandler` can't see (Postgres error code, constraint name, row count): `request.log.warn({ pgCode: err.code, constraint: '<resource>_<column>_key' }, 'unique constraint violation on <schema>.<table>')`. Don't double-log.
+- **Use `request.log`, not `console`.** It carries the request id; pino redacts `Authorization` headers.
+- **Repositories surface, services translate.** Repositories propagate raw Supabase errors (`PGRST116`, `23505`, etc.). Services catch and re-throw as domain errors with readable messages.
+- **Pick the right error class.** `BadRequestError`, `NotFoundError`, `ConflictError`, `UnauthorizedError`, `ForbiddenError`, `ServiceUnavailableError`, `GatewayTimeoutError`, `TokenExpiredError`, `TokenInvalidError`, `TokenRevokedError`, `UpstreamUnavailableError`. Don't reach for `AppError` directly.
+- **Validation errors carry `details[]`.** If throwing `ValidationError` manually, populate `details` with `{ field, issue }`.
 
 ### 14. Authentication is delegated to identity-service
 
@@ -250,48 +171,21 @@ with an `IdentityClient` instance. It validates `IDENTITY_SERVICE_URL` at boot
 
 ### 15. OpenAPI docs are for service consumers (BFFs and other services)
 
-Unlike a BFF, the audience for this service's `/docs` is internal —
-other backend engineers integrating BFF or service-to-service calls.
-Be more descriptive than a BFF would be.
+Audience is internal backend engineers (BFFs + service-to-service). Be more descriptive than a BFF would be — a caller should be able to write the right HTTP call **without reading the source**.
 
-- **Do explain:** the business rule the endpoint encodes, the
-  preconditions, the side effects (e.g. *"publishing copies the brand
-  row into `brands_live` atomically"*), the lifecycle constraints
-  (*"draft only; 409 if `is_published`"*), the role/JWT requirements,
-  and any non-obvious error codes the caller should handle.
-- **Do reference internal docs** — ADRs, data-model docs — when an
-  endpoint reflects a non-obvious decision. The reader is on your team.
-- **Still avoid:** secrets, real customer data, ephemeral migration
-  notes, "TODO" rationale that belongs in code review.
-
-A good rule of thumb: a BFF engineer integrating against this service
-should be able to write the right call **without reading the source**.
-That implies more prose than a BFF's own docs would carry.
+- **Do explain:** business rules, preconditions, side effects, lifecycle constraints, role/JWT requirements, non-obvious error codes. Reference ADRs and data-model docs when an endpoint reflects a non-obvious decision.
+- **Avoid:** secrets, real customer data, ephemeral migration notes, TODO rationale.
 
 ## Adding a new resource (recipe)
 
 1. Create the six files under `src/api/<resource>/`. Give every TypeBox schema a
    resource-prefixed `$id` (e.g. `$id: 'BrandCreateRequest'`) and call
    `fastify.addSchema(...)` for each at the top of the route plugin.
-2. Add a migration under `supabase/migrations/` for the new table.
+2. Add a migration under `supabase/migrations/` for the new table, including a `set_<table>_updated_at` trigger that calls `<schema>.set_updated_at()` (see Rule 11). If `supabase/migrations/` is empty (fresh clone), this migration must also create the schema, grants, and the `set_updated_at()` function — see [`supabase/migrations/TEMPLATE.sql`](supabase/migrations/TEMPLATE.sql).
 3. Register the routes at their prefix in `src/routes.ts`.
 4. Add the resource's tag to `src/plugins/swagger.ts`.
 5. Write tests: `tests/services/<resource>.service.test.ts` (unit, mocked repo)
    and `tests/routes/<resource>.test.ts` (integration, chained Supabase mock via
    `buildTestApp`). See `tests/helpers/build-test-app.ts`.
 
-## Adding a cross-service upstream (recipe)
-
-The identity integration (`src/services/identity.ts` +
-`src/plugins/identity.ts`) is the worked example. Follow the same pattern
-for any additional upstream:
-
-1. Add `<UPSTREAM>_URL` and `<UPSTREAM>_TIMEOUT` to `appConfig.ts`,
-   making the URL `required()` if production needs it.
-2. Add the vars to `.env.example`.
-3. Create `src/services/<upstream>.ts` — one HTTP client class per upstream.
-4. Create `src/plugins/<upstream>.ts` that decorates `fastify.<upstream>`
-   with the client. Set `dependencies: []` (or omit) if independent of other
-   plugins.
-5. Register the plugin in `src/app.ts` in the correct position (after any
-   plugin it depends on, before any plugin that depends on it).
+For the cross-service upstream recipe, see [docs/architecture.md](docs/architecture.md).

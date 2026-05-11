@@ -24,7 +24,7 @@ All errors are returned in the following envelope:
 {
   "error": {
     "code": "NOT_FOUND",
-    "message": "Item abc123 not found",
+    "message": "<Resource> abc123 not found",
     "status": 404,
     "details": [{ "field": "name", "issue": "is required" }]
   }

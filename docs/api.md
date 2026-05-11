@@ -70,7 +70,7 @@ Postgres (via Supabase)
 Errors thrown anywhere bubble to the global error handler and serialise to:
 
 ```json
-{ "error": { "code": "NOT_FOUND", "message": "Item abc not found", "status": 404 } }
+{ "error": { "code": "NOT_FOUND", "message": "<Resource> abc not found", "status": 404 } }
 ```
 
 See [ADR-0001](decisions/0001-standard-error-response-format.md).
@@ -89,6 +89,20 @@ List endpoints take `?page` (default `1`) and `?limit` (default `20`, max `100`)
 { "data": [...], "pagination": { "page": 1, "limit": 20, "hasNext": false, "hasPrev": false } }
 ```
 
+### Database conventions
+
+Every domain table carries exactly three metadata columns:
+
+| Column | Type | Default | Maintained by |
+|---|---|---|---|
+| `id` | `UUID PRIMARY KEY` | `gen_random_uuid()` | DB |
+| `created_at` | `TIMESTAMPTZ NOT NULL` | `NOW()` | DB |
+| `updated_at` | `TIMESTAMPTZ NOT NULL` | `NOW()` on insert; trigger on update | DB trigger |
+
+`updated_at` is owned by the database — a `BEFORE UPDATE` trigger named `set_<table>_updated_at` calls a single per-schema `set_updated_at()` function. Application code never writes `updated_at`. This means concurrent writes from multiple service instances and direct SQL writes are always correct. See [ADR-0002](decisions/0002-updated-at-trigger.md).
+
+No `created_by`, `updated_by`, or `deleted_at` columns by default. Add them explicitly if a service requires auditing.
+
 ### Naming conventions — two patterns
 
 DB columns are always **snake_case**. The TypeScript/API layer has two approaches depending on the table:
@@ -98,11 +112,11 @@ DB columns are always **snake_case**. The TypeScript/API layer has two approache
 | **Standalone repo + snake_case end-to-end** | Table has JSONB columns, or you want no conversion | Write a standalone class; snake_case on the wire and in TS types |
 | **`BaseRepository` + humps** | Table has no JSONB columns | Extend `BaseRepository`; humps converts snake↔camel at the repo boundary; API surface is camelCase |
 
-The shipped `items` example uses the standalone pattern because humps would corrupt any JSONB content.
+Choose the standalone pattern (snake_case, no humps) by default. Only reach for `BaseRepository` when the table has no JSONB columns and you want automatic camelCase conversion at the boundary.
 
 ### Schema `$id`s
 
-Give every TypeBox schema a resource-prefixed `$id` so they appear in the OpenAPI `components/schemas` section and are referenced (not duplicated) across operations. Examples: `Item`, `ItemCreateRequest`, `ItemUpdateRequest`, `ItemIdParams`, `ItemListQuery`, `ItemList`. Call `fastify.addSchema(...)` at the top of the route plugin for each.
+Give every TypeBox schema a resource-prefixed `$id` so they appear in the OpenAPI `components/schemas` section and are referenced (not duplicated) across operations. Examples: `<Resource>`, `<Resource>CreateRequest`, `<Resource>UpdateRequest`, `<Resource>IdParams`, `<Resource>ListQuery`, `<Resource>List`. Call `fastify.addSchema(...)` at the top of the route plugin for each.
 
 ### Authentication
 
@@ -134,7 +148,7 @@ Repositories receive their client from the route handler via the constructor. Ne
 Prefer the specific subclass over `AppError` directly:
 `BadRequestError`, `ValidationError`, `NotFoundError`, `UnauthorizedError`, `ForbiddenError`, `ConflictError`, `ServiceUnavailableError`, `GatewayTimeoutError`, `TokenExpiredError`, `TokenInvalidError`, `TokenRevokedError`, `UpstreamUnavailableError`.
 
-Repositories surface raw Supabase errors; services catch and translate them into the right subclass with a specific message (`"Item ${id} not found"` rather than `"Not found"`).
+Repositories surface raw Supabase errors; services catch and translate them into the right subclass with a specific message (`"<Resource> ${id} not found"` rather than `"Not found"`).
 
 ## Adding a new resource
 
