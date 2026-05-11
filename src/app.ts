@@ -30,7 +30,10 @@ export async function buildApp(opts: BuildAppOptions = {}) {
       customOptions: {
         removeAdditional: false,
         allErrors: true
-      }
+      },
+      plugins: [
+        (ajv: any) => ajv.addKeyword({ keyword: 'example' })
+      ]
     }
   }).withTypeProvider<TypeBoxTypeProvider>()
 
