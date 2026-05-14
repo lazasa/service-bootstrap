@@ -32,6 +32,7 @@ export const swaggerOptions = {
 
 export const swaggerUIOptions = {
   routePrefix: '/docs',
+  indexPrefix: process.env.DOCS_INDEX_PREFIX || '',
   uiConfig: {
     docExpansion: 'none' as const,
     deepLinking: true,
